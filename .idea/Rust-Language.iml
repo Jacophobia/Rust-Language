@@ -6,9 +6,11 @@
       <sourceFolder url="file://$MODULE_DIR$/guessing_game/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/variables/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/sqlite/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/testing/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/guessing_game/target" />
       <excludeFolder url="file://$MODULE_DIR$/variables/target" />
       <excludeFolder url="file://$MODULE_DIR$/sqlite/target" />
+      <excludeFolder url="file://$MODULE_DIR$/testing/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

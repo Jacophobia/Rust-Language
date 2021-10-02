@@ -3,7 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/Rust-Language.iml" filepath="$PROJECT_DIR$/.idea/Rust-Language.iml" />
-      <module fileurl="file://$PROJECT_DIR$/Testing/Testing.iml" filepath="$PROJECT_DIR$/Testing/Testing.iml" />
+      <module fileurl="file://$PROJECT_DIR$/testing/Testing.iml" filepath="$PROJECT_DIR$/testing/Testing.iml" />
     </modules>
   </component>
 </project>
