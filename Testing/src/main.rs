@@ -22,13 +22,12 @@ struct Request {
 }
 
 fn main() {
-    let mut conn = Connection::open("new.db").expect("Communication with database failed");
+    let mut conn = Connection::open("sqlite.db").expect("Communication with database failed");
     let tx: Transaction = conn
         .transaction()
         .expect("Communication with database failed");
 
     tx.execute("CREATE TABLE IF NOT EXISTS credentials (username MEDIUMTEXT NOT NULL, password MEDIUMTEXT NOT NULL, date_entered TEXT NOT NULL, department TEXT, clearance UNSIGNED TINYINT, PRIMARY KEY (username))", []).expect("Failed to create Table");
-    tx.execute("CREATE TABLE IF NOT EXISTS requests (incident_id MEDIUMINT UNSIGNED NOT NULL, summary TEXT, description TEXT NOT NULL, date_entered BIGINT UNSIGNED NOT NULL, department TEXT, request_source TEXT, category TEXT, color TEXT, reason_red TEXT, date_completed TEXT, date_expected TEXT, date_retired TEXT, PRIMARY KEY (incident_id))", []).expect("Failed to create Table");
 
     let mut username = String::new();
     let mut password = String::new();
@@ -116,5 +115,5 @@ fn add_user(username: &str, password: &str, department: &str, clearance: &str, t
 }
 
 fn get_start_date() -> String {
-    format!("{}", Utc::now())
+    format!("{}", Utc::now().date())
 }

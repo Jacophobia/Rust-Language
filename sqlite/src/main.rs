@@ -1,7 +1,8 @@
 use std::io;
 use std::io::Write;
-use rusqlite::{params, Connection, Result, Transaction};
+use rusqlite::{Connection, Result, Transaction};
 use chrono::prelude::*;
+use rand::Rng;
 
 #[derive(Debug)]
 struct User {
@@ -17,20 +18,23 @@ struct Request {
     incident_id: u32,
     summary: String,
     description: String,
-    date_entered: u64,
+    date_entered: String,
     department: String,
     clearance: u8,
 }
 
 fn main() {
-    let mut conn = Connection::open("data/requests.db").expect("Unable to open database.");
+    let mut conn = Connection::open("data/sqlite.db").expect("Unable to open database.");
     let tx: Transaction = conn.transaction().expect("Transaction failed.");
-    tx.execute("CREATE TABLE IF NOT EXISTS credentials (username MEDIUMTEXT NOT NULL, password MEDIUMTEXT NOT NULL, date_entered BIGINT UNSIGNED NOT NULL, department TEXT, clearance UNSIGNED TINYINT, PRIMARY KEY (username))", []);
-    let (username, clearance, department) = get_login(&tx);
-    tx.execute(&*format!("CREATE TABLE IF NOT EXISTS {} (incident_id MEDIUMINT UNSIGNED NOT NULL, summary TEXT, description TEXT NOT NULL, date_entered BIGINT UNSIGNED NOT NULL, department TEXT, request_source TEXT, category TEXT, color TEXT, reason_red TEXT, date_completed TEXT, date_expected TEXT, date_retired TEXT, PRIMARY KEY (incident_id))", department), []);
-    display_dashboard(&username, &clearance, &department, &tx);
-    do_actions(&username, &clearance, &department, &tx);
-    save_changes(&tx);
+    {
+        tx.execute("CREATE TABLE IF NOT EXISTS credentials (username MEDIUMTEXT NOT NULL, password MEDIUMTEXT NOT NULL, date_entered TEXT NOT NULL, department TEXT, clearance UNSIGNED TINYINT, PRIMARY KEY (username))", []).expect("Failed to create Table");
+        let (username, clearance, department) = get_login(&tx);
+        tx.execute(&*format!("CREATE TABLE IF NOT EXISTS requests (incident_id MEDIUMINT UNSIGNED NOT NULL, summary TEXT, description TEXT NOT NULL, date_entered TEXT NOT NULL, department TEXT, clearance UNSIGNED TINYINT, PRIMARY KEY (incident_id))"), []).expect("Failed to create table.");
+        display_dashboard(&clearance, &tx);
+        do_actions(&username, &clearance, &department, &tx);
+    }
+    // save_changes(&tx);
+    tx.commit().expect("Unable to commit changes");
 }
 
 fn get_login(tx: &Transaction) -> (String, u8, String) {
@@ -38,15 +42,25 @@ fn get_login(tx: &Transaction) -> (String, u8, String) {
     let mut password;
     loop {
         username = String::new();
+        print!("Please enter your username: ");
+        io::stdout().flush().expect("Failed to flush stdout");
         io::stdin()
             .read_line(&mut username)
             .expect("Unable to read input");
+        username = username.trim().parse().expect("Failed to parse username");
         password = String::new();
+        print!("Please enter your password: ");
+        io::stdout().flush().expect("Failed to flush stdout");
         io::stdin()
             .read_line(&mut password)
             .expect("Unable to read input");
+        password = password.trim().parse().expect("Failed to parse password");
         if validate_credentials(&username, &password, &tx) {
-            (username, get_clearance(&username, &tx), get_department(&username))
+            let username_2 = username.clone();
+            return (username, get_clearance(&username_2, &tx), get_department(&username_2, &tx))
+        }
+        else {
+            println!("Username and password not recognized.");
         }
     }
 }
@@ -55,7 +69,7 @@ fn validate_credentials(username: &str, password: &str, tx: &Transaction) -> boo
     // Access the sql database and see if the username & password match.
 
     if contains_credential(username, &tx) {
-        return get_credentials(username, &tx).expect("Unable to retrieve credentials").password == password
+        return get_credentials(username, &tx).expect("Unable to retrieve credentials").password.eq(password.trim());
     }
     else {
         false
@@ -73,7 +87,7 @@ fn get_clearance(username: &str, tx: &Transaction) -> u8 {
     }
 }
 
-fn get_department(username: &str) -> String {
+fn get_department(username: &str, tx: &Transaction) -> String {
     // Access the sql database and get the department of the user.
     if contains_credential(username, &tx) {
         get_credentials(username, &tx).expect("Unable to get clearance level of user.").department
@@ -84,15 +98,22 @@ fn get_department(username: &str) -> String {
     }
 }
 
-fn display_dashboard(username: &str, clearance: &u8, department: &str, tx: &Transaction) {
+fn display_dashboard(clearance: &u8, tx: &Transaction) {
     // Access the sql database and get all relevant data for the user.
-
+    let requests = get_requests("Admin", &tx);
+    println!("Requests:");
+    for request in requests {
+        if request.clearance <= *clearance {
+            println!("Incident Id: {}\nSummary: {}\nDate Entered: {}\n", request.incident_id, request.summary, request.date_entered);
+        }
+    }
 }
 
 fn do_actions(username: &str, clearance: &u8, department: &str, tx: &Transaction) {
     loop {
         let mut done = false;
-        if clearance == 0 {
+        let default_clearance: u8 = 0;
+        if clearance == &default_clearance {
             display_limited_actions();
             let action = get_limited_actions();
             match action {
@@ -106,8 +127,12 @@ fn do_actions(username: &str, clearance: &u8, department: &str, tx: &Transaction
             display_actions();
             let action = get_action();
             match action {
-                1 => add_request(department),
-                2 => update_request(),
+                // 1 - Add Request
+                // 2 - View Requests
+                // 3 - Add User
+                // 4 - Exit Program
+                1 => add_request(department, &tx),
+                2 => display_dashboard(clearance, &tx),
                 3 => add_user(&tx),
                 4 => return,
                 _ => continue,
@@ -146,7 +171,7 @@ fn get_limited_actions() -> u8 {
     }
 }
 
-fn make_account_request(username: &str) {
+fn make_account_request(_username: &str) {
     // Add the username to a table in the database for account requests.
     // Maybe let them enter a note.
 }
@@ -155,7 +180,7 @@ fn display_actions() {
     // display the actions available to the user.
     println!("Please select an action:");
     println!("1 - Add Request");
-    println!("2 - Update Request");
+    println!("2 - View Requests");
     println!("3 - Add User");
     println!("4 - Exit Program");
 }
@@ -186,7 +211,52 @@ fn get_action() -> u8 {
     }
 }
 
+fn add_request(department: &str, tx: &Transaction) {
+    let incident_id: u32 = rand::thread_rng().gen_range(111111111..=999999999);
+    let incident_id: String = incident_id.to_string();
+    let mut summary: String = String::new();
+    print!("Enter request summary: ");
+    io::stdout().flush().expect("Failed to flush stdout");
+    io::stdin().read_line(&mut summary).expect("Unable to read input");
+    let mut description: String = String::new();
+    print!("Enter request description: ");
+    io::stdout().flush().expect("Failed to flush stdout");
+    io::stdin().read_line(&mut description).expect("Unable to read input");
+    let date_entered: String = get_start_date();
+    let department: String = department.to_string();
+    let clearance: String = "0".to_string();
+    tx.execute("insert into requests (incident_id, summary, description, date_entered, department, clearance) values (?1, ?2, ?3, ?4, ?5, ?6)", [incident_id, summary.trim().to_string(), description.trim().to_string(), date_entered, department, clearance]).expect("Communication with database failed");
+}
 // add_request
+fn get_requests(department: &str, tx: &Transaction) -> Vec<Request> {
+    let mut stmt = tx
+        .prepare(&*format!(
+            "SELECT * FROM requests WHERE department='{}'",
+            department
+        ))
+        .expect("Unable to prepare retrieval");
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(Request {
+                incident_id: row.get(0).expect("Unable to extract username"),
+                summary: row.get(1).expect("Unable to extract summary"),
+                description: row.get(2).expect("Unable to extract description"),
+                date_entered: row.get(3).expect("Unable to extract date_entered"),
+                department: row.get(4).expect("Unable to extract department"),
+                clearance: row.get(5).expect("Unable to extract clearance"),
+            })
+        })
+        .expect("Unable to extract data");
+    let mut row_list: Vec<Request> = Vec::new();
+    for row in rows {
+        let request = row.expect("Unable to read row data");
+        row_list.push(request);
+    }
+    row_list
+}
+
+
+
 fn add_user(tx: &Transaction) {
     let mut username = String::new();
     let mut password = String::new();
@@ -237,9 +307,12 @@ fn contains_credential(username: &str, tx: &Transaction) -> bool {
     //     1: username,   2: password,  3: date_entered,
     //     4: department, 5: clearance, 6: all
 
-    match get_credentials(username, &tx) {
+    return match get_credentials(username, &tx) {
         Ok(_) => true,
-        Err(_) => false,
+        Err(error) => {
+            eprintln!("{}", error);
+            false
+        }
     }
 }
 
@@ -263,7 +336,7 @@ fn get_credentials(username: &str, tx: &Transaction) -> Result<User, String> {
         .expect("Unable to extract data");
     for row in rows {
         let user = row.expect("Unable to read row data");
-        if user.name == username.to_string() {
+        if user.name == username.trim().to_string() {
             return Ok(user);
         }
     }
@@ -272,7 +345,6 @@ fn get_credentials(username: &str, tx: &Transaction) -> Result<User, String> {
         .expect("Unable to parse value"))
 }
 
-fn save_changes(tx: &Transaction) {
-    // Save the changes to the database.
-    tx.commit().expect("Failed to save changes");
+fn get_start_date() -> String {
+    format!("{}", Utc::now().date())
 }
